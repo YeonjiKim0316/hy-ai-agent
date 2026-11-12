@@ -1,0 +1,150 @@
+<!doctype html>
+<!-- © 2026 김연지. All rights reserved. 수강생 개인 학습용 · 무단 강의·복제·배포·수정 금지 (LICENSE.md) -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>하루마켓 리뷰 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<style>
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin:20px 0}
+.cards .card{margin:0}
+.cards h2{font-size:1.1rem;margin-bottom:10px}
+.cards .key{font-weight:400;font-size:.8rem;color:var(--muted);margin-left:6px}
+.big{font-size:2.6rem;font-weight:800;line-height:1.1}
+.bars{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:.9rem}
+.bars .name{white-space:nowrap}
+.bars .track{height:16px;background:var(--gray-bg);border-radius:999px;overflow:hidden}
+.bars .fill{height:100%;background:var(--brand);border-radius:999px}
+.bars .num{font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.wide{grid-column:1 / -1}
+table.plain{border-collapse:collapse;width:100%;font-size:.9rem}
+table.plain th,table.plain td{text-align:left;border-bottom:1px solid var(--line);padding:4px 8px}
+.todo-box{padding:12px 16px;border-radius:10px;background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn);font-weight:600}
+.err-box{padding:12px 16px;border-radius:10px;background:var(--bad-bg);color:var(--bad);border:2px solid var(--bad);font-weight:600}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:20px}
+.toolbar a{color:var(--brand);font-weight:700}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <h1>하루마켓 <span>리뷰 대시보드</span></h1>
+    <a href="index.html" class="btn">리뷰 분석 화면</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="toolbar">
+    <button type="button" class="btn primary" id="reload">새로고침</button>
+    <span id="summary" class="hint" role="status" aria-live="polite"></span>
+  </div>
+  <div id="cards" class="cards" aria-live="polite">불러오는 중…</div>
+</main>
+
+<footer class="foot"><div class="wrap">하루마켓은 수업용 가상 쇼핑몰입니다. 이 화면의 숫자는 가상 데이터입니다.</div></footer>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function fmt(col, v) {
+  return String(v);
+}
+
+// 한 줄짜리 카드: 큰 숫자
+function bigNumber(card) {
+  const box = el("div");
+  card.columns.forEach((col, i) => {
+    const v = card.rows[0][i];
+    box.appendChild(el("div", "big", fmt(col, v)));
+  });
+  return box;
+}
+
+// 여러 줄 카드: 마지막 열이 숫자이면 숫자 -> 막대 길이
+function bars(card) {
+  const last = card.columns.length - 1;
+  const max = Math.max(...card.rows.map((r) => Number(r[last]) || 0), 1);
+  const grid = el("div", "bars");
+  for (const row of card.rows) {
+    const name = row.slice(0, last).join(" · ");
+    grid.appendChild(el("span", "name", name));
+    const track = el("span", "track");
+    const fill = el("span", "fill");
+    fill.style.display = "block";
+    fill.style.width = Math.max(0, (Number(row[last]) / max) * 100) + "%";
+    track.appendChild(fill);
+    grid.appendChild(track);
+    grid.appendChild(el("span", "num", fmt(card.columns[last], row[last])));
+  }
+  return grid;
+}
+
+// 막대로 못 그리는 모양(숫자 열이 없음 등): 표
+function table(card) {
+  const t = el("table", "plain");
+  const head = el("tr");
+  card.columns.forEach((c) => head.appendChild(el("th", "", c)));
+  t.appendChild(head);
+  for (const row of card.rows) {
+    const tr = el("tr");
+    row.forEach((v, i) => tr.appendChild(el("td", "", fmt(card.columns[i], v))));
+    t.appendChild(tr);
+  }
+  return t;
+}
+
+function render(key, card) {
+  const sec = el("section", "card");
+  const h = el("h2", "", card.title || key);
+  h.appendChild(el("span", "key", key));
+  sec.appendChild(h);
+  if (card.todo) {
+    sec.appendChild(el("div", "todo-box", "쿼리를 채워 주세요 (app/dashboard.py · " + key + ")"));
+  } else if (card.error) {
+    sec.appendChild(el("div", "err-box", "쿼리 오류: " + card.error));
+  } else if (!card.rows.length) {
+    sec.appendChild(el("p", "hint", "결과가 없습니다."));
+  } else if (card.rows.length === 1) {
+    sec.appendChild(bigNumber(card));
+  } else if (card.rows.every((r) => typeof r[r.length - 1] === "number")) {
+    sec.appendChild(bars(card));
+    if (card.rows.length > 8) sec.classList.add("wide");
+  } else {
+    sec.appendChild(table(card));
+  }
+  return sec;
+}
+
+async function load() {
+  const box = $("cards");
+  try {
+    const res = await fetch("/v1/dashboard");
+    if (!res.ok) throw new Error("서버 응답 " + res.status);
+    const data = await res.json();
+    box.replaceChildren();
+    let todo = 0;
+    for (const [key, card] of Object.entries(data)) {
+      if (card.todo) todo += 1;
+      box.appendChild(render(key, card));
+    }
+    $("summary").textContent = todo ? "빈 칸 " + todo + "개" : "모든 카드가 채워졌습니다";
+  } catch (err) {
+    box.replaceChildren(el("div", "err-box", "대시보드를 불러오지 못했습니다: " + err.message));
+    $("summary").textContent = "";
+  }
+}
+
+$("reload").addEventListener("click", load);
+load();
+</script>
+</body>
+</html>

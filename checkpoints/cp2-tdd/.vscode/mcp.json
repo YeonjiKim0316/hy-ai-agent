@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "review-logs": {
+      "command": "npx",
+      "args": ["-y", "mcp-sqlite@1.0.9", "${workspaceFolder}/data/sample_logs.db"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@4.4.4"]
+    }
+  }
+}
